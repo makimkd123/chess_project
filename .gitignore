@@ -1,0 +1,29 @@
+# Build folders
+build/
+out/
+cmake-build-*/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+# Compiled binaries / objects
+*.exe
+*.dll
+*.obj
+*.o
+*.a
+*.lib
+*.pdb
+*.ilk
+
+# IDE / editor
+.vs/
+.vscode/.cmake/
+.vscode/ipch/
+
+# OS junk
+.DS_Store
+Thumbs.db
