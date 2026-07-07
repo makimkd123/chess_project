@@ -23,6 +23,7 @@ compile_commands.json
 .vs/
 .vscode/.cmake/
 .vscode/ipch/
+.vscode/settings.json
 
 # OS junk
 .DS_Store
