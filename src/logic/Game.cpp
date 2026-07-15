@@ -41,13 +41,15 @@ GameState& Game::state() {
     return state_;
 }
 
-bool Game::makeMove(const Move& move) {
-    auto legalMoves = MoveGenerator::generateLegalMoves(
-        state_.board,
-        state_.sideToMove,
-        state_.castlingRights,
-        state_.enPassantTarget
-    );
+bool Game::makeMove(const Move& move)
+{
+    const auto legalMoves =
+        MoveGenerator::generateLegalMoves(
+            state_.board,
+            state_.sideToMove,
+            state_.castlingRights,
+            state_.enPassantTarget
+        );
 
     bool foundLegalMove = false;
 
@@ -69,18 +71,11 @@ bool Game::makeMove(const Move& move) {
         return false;
     }
 
-    updateCastlingRights(move);
-    updateEnPassantTarget(move);
-    updateMoveCounters(move);
-
-    bool moveWorked = state_.board.makeMove(move);
-
-    if (!moveWorked) {
+    if (!state_.applyMove(move)) {
         return false;
     }
 
     moveHistory_.push_back(move);
-    switchSideToMove();
 
     return true;
 }

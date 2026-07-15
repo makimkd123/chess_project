@@ -2,11 +2,11 @@
 
 #include "models/Board.h"
 #include "models/Pieces.h"
-#include "CastlingRights.h"
+#include "models/Move.h"
 #include "models/Square.h"
+#include "CastlingRights.h"
+
 #include <optional>
-
-
 
 enum class GameStatus {
     Ongoing,
@@ -15,21 +15,26 @@ enum class GameStatus {
     Stalemate
 };
 
-
 class GameState {
-    public:
+public:
+    Board board;
+    PieceColor sideToMove = PieceColor::White;
+    CastlingRights castlingRights{};
 
-        Board board;
-        PieceColor sideToMove = PieceColor::White;
-        CastlingRights castlingRights{};
+    std::optional<Square> enPassantTarget = std::nullopt;
 
-        std::optional<Square> enPassantTarget = std::nullopt;
+    int halfmoveClock = 0;
+    int fullmoveNumber = 1;
 
-        int halfmoveClock=0;
-        int fullmoveNumber=1;
+    GameStatus getStatus() const;
 
-        GameStatus getStatus() const;
+    static GameState startingPosition();
 
-        static GameState startingPosition();
+    bool applyMove(const Move& move);
 
+private:
+    void switchSideToMove();
+    void updateCastlingRights(const Move& move);
+    void updateEnPassantTarget(const Move& move);
+    void updateMoveCounters(const Move& move);
 };

@@ -1,1433 +1,1138 @@
 #include <iostream>
-#include <vector>
-#include <string>
 #include <optional>
+#include <span>
+#include <string>
+#include <vector>
 
-#include "models/Board.h"
-#include "models/Pieces.h"
-#include "models/Square.h"
-#include "models/Move.h"
-
-#include "logic/AttackDetector.h"
-#include "logic/MoveGenerator.h"
-#include "logic/GameState.h"
 #include "logic/Game.h"
-#include "logic/CastlingRights.h"
-#include "notation/Fen.h"
+#include "logic/GameState.h"
+#include "logic/MoveGenerator.h"
+#include "models/Move.h"
+#include "models/Pieces.h"
+#include "notation/San.h"
+#include "notation/Pgn.h"
 
+namespace {
 
-bool optionalSquareEquals(
-    std::optional<Square> square,
-    Square expected
-) {
-    if (!square.has_value()) {
-        return false;
-    }
-
-    return square->file == expected.file &&
-           square->rank == expected.rank;
+std::vector<Move> legalMovesFor(const GameState& state)
+{
+    return MoveGenerator::generateLegalMoves(
+        state.board,
+        state.sideToMove,
+        state.castlingRights,
+        state.enPassantTarget
+    );
 }
 
-bool containsPromotionMove(
-    const std::vector<Move>& moves,
-    Square from,
-    Square to,
-    PieceType promotionType
-) {
-    for (const Move& move : moves) {
-        if (
-            move.from.file == from.file &&
-            move.from.rank == from.rank &&
-            move.to.file == to.file &&
-            move.to.rank == to.rank &&
-            move.type == MoveType::Promotion &&
-            move.promotionType.has_value() &&
-            move.promotionType.value() == promotionType
-        ) {
-            return true;
+void expectSan(
+    const GameState& state,
+    const Move& move,
+    const std::string& expected,
+    const std::string& testName)
+{
+    const std::vector<Move> legalMoves = legalMovesFor(state);
+
+    try {
+        const std::string actual = toSan(state, move, legalMoves);
+
+        if (actual == expected) {
+            std::cout << "[PASS] " << testName << '\n';
+        } else {
+            std::cout << "[FAIL] " << testName << '\n';
+            std::cout << "       Expected: " << expected << '\n';
+            std::cout << "       Actual:   " << actual << '\n';
         }
     }
-
-    return false;
-}
-
-int countPromotionMoves(
-    const std::vector<Move>& moves,
-    Square from,
-    Square to
-) {
-    int count = 0;
-
-    for (const Move& move : moves) {
-        if (
-            move.from.file == from.file &&
-            move.from.rank == from.rank &&
-            move.to.file == to.file &&
-            move.to.rank == to.rank &&
-            move.type == MoveType::Promotion
-        ) {
-            count++;
-        }
-    }
-
-    return count;
-}
-bool sameSquare(Square a, Square b) {
-    return a.file == b.file && a.rank == b.rank;
-}
-
-bool sameMove(const Move& move, Square from, Square to) {
-    return sameSquare(move.from, from) && sameSquare(move.to, to);
-}
-
-bool containsMove(
-    const std::vector<Move>& moves,
-    Square from,
-    Square to
-) {
-    for (const Move& move : moves) {
-        if (sameMove(move, from, to)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-void expectTrue(bool value, const std::string& testName) {
-    if (value) {
-        std::cout << "[PASS] " << testName << '\n';
-    } else {
+    catch (const std::exception& error) {
         std::cout << "[FAIL] " << testName << '\n';
+        std::cout << "       Exception: " << error.what() << '\n';
     }
 }
 
-void expectFalse(bool value, const std::string& testName) {
-    expectTrue(!value, testName);
-}
-
-void expectEqualInt(int actual, int expected, const std::string& testName) {
-    if (actual == expected) {
-        std::cout << "[PASS] " << testName << '\n';
-    } else {
-        std::cout << "[FAIL] " << testName
-                  << " expected " << expected
-                  << " but got " << actual << '\n';
-    }
-}
-bool containsMoveOfType(
-    const std::vector<Move>& moves,
-    Square from,
-    Square to,
-    MoveType type
-) {
-    for (const Move& move : moves) {
-        if (
-            move.from.file == from.file &&
-            move.from.rank == from.rank &&
-            move.to.file == to.file &&
-            move.to.rank == to.rank &&
-            move.type == type
-        ) {
-            return true;
-        }
-    }
-
-    return false;
-}
-void testAllPiecesFen() {
+GameState emptyState(PieceColor sideToMove = PieceColor::White)
+{
     GameState state;
     state.board.clear();
-
-    state.board.setPiece({0, 0}, Piece{PieceType::King, PieceColor::White});
-    state.board.setPiece({1, 0}, Piece{PieceType::Queen, PieceColor::White});
-    state.board.setPiece({2, 0}, Piece{PieceType::Rook, PieceColor::White});
-    state.board.setPiece({3, 0}, Piece{PieceType::Bishop, PieceColor::White});
-    state.board.setPiece({4, 0}, Piece{PieceType::Knight, PieceColor::White});
-    state.board.setPiece({5, 0}, Piece{PieceType::Pawn, PieceColor::White});
-
-    state.board.setPiece({0, 7}, Piece{PieceType::King, PieceColor::Black});
-    state.board.setPiece({1, 7}, Piece{PieceType::Queen, PieceColor::Black});
-    state.board.setPiece({2, 7}, Piece{PieceType::Rook, PieceColor::Black});
-    state.board.setPiece({3, 7}, Piece{PieceType::Bishop, PieceColor::Black});
-    state.board.setPiece({4, 7}, Piece{PieceType::Knight, PieceColor::Black});
-    state.board.setPiece({5, 7}, Piece{PieceType::Pawn, PieceColor::Black});
-
-    state.sideToMove = PieceColor::White;
+    state.sideToMove = sideToMove;
     state.castlingRights = CastlingRights{false, false, false, false};
     state.enPassantTarget = std::nullopt;
     state.halfmoveClock = 0;
     state.fullmoveNumber = 1;
-
-    std::string expected = "kqrbnp2/8/8/8/8/8/8/KQRBNP2 w - - 0 1";
-
-    expectTrue(
-        toFen(state) == expected,
-        "All piece types export to correct FEN letters"
-    );
+    return state;
 }
-void testFenMetadataFields() {
-    GameState state;
-    state.board.clear();
 
-    state.board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White});
-    state.board.setPiece({4, 7}, Piece{PieceType::King, PieceColor::Black});
-
-    state.sideToMove = PieceColor::Black;
-    state.castlingRights = CastlingRights{true, false, false, true};
-    state.enPassantTarget = Square{4, 2}; // e3
-    state.halfmoveClock = 7;
-    state.fullmoveNumber = 12;
-
-    std::string expected = "4k3/8/8/8/8/8/8/4K3 b Kq e3 7 12";
-
-    expectTrue(
-        toFen(state) == expected,
-        "FEN exports side, castling, en passant, and move counters"
-    );
-}
-void testSimpleCustomFen() {
-    GameState state;
-
-    state.board.clear();
-
-    state.board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White});
-    state.board.setPiece({4, 7}, Piece{PieceType::King, PieceColor::Black});
-
-    state.sideToMove = PieceColor::White;
-    state.castlingRights = CastlingRights{
-        false, false,
-        false, false
-    };
-    state.enPassantTarget = std::nullopt;
-    state.halfmoveClock = 0;
-    state.fullmoveNumber = 1;
-
-    std::string fen = toFen(state);
-
-    std::string expected =
-        "4k3/8/8/8/8/8/8/4K3 w - - 0 1";
-
-    if (fen == expected) {
-        std::cout << "[PASS] Simple king position exports to correct FEN\n";
-    } else {
-        std::cout << "[FAIL] Simple king position exports to correct FEN\n";
-        std::cout << "Expected: " << expected << '\n';
-        std::cout << "Actual:   " << fen << '\n';
-    }
-}
-void testEnPassantFen() {
-    GameState state = GameState::startingPosition();
-
-    state.board.makeMove(Move{
-        Square{4, 1},
-        Square{4, 3},
-        MoveType::Normal,
-        std::nullopt
-    });
-
-    state.sideToMove = PieceColor::Black;
-    state.enPassantTarget = Square{4, 2};
-    state.halfmoveClock = 0;
-    state.fullmoveNumber = 1;
-
-    std::string fen = toFen(state);
-
-    std::string expected =
-        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
-
-    if (fen == expected) {
-        std::cout << "[PASS] En passant target exports to correct FEN\n";
-    } else {
-        std::cout << "[FAIL] En passant target exports to correct FEN\n";
-        std::cout << "Expected: " << expected << '\n';
-        std::cout << "Actual:   " << fen << '\n';
-    }
-}
-void testStartingPositionFen() {
-    GameState state = GameState::startingPosition();
-
-    std::string fen = toFen(state);
-
-    std::string expected =
-        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-
-    if (fen == expected) {
-        std::cout << "[PASS] Starting position exports to correct FEN\n";
-    } else {
-        std::cout << "[FAIL] Starting position exports to correct FEN\n";
-        std::cout << "Expected: " << expected << '\n';
-        std::cout << "Actual:   " << fen << '\n';
-    }
-}
-int main() {
-    {
-        Board board;
-        board.setupStartingPosition();
-
-        auto whiteLegalMoves = MoveGenerator::generateLegalMoves(
-            board,
-            PieceColor::White
-        );
-
-        auto blackLegalMoves = MoveGenerator::generateLegalMoves(
-            board,
-            PieceColor::Black
-        );
-
-        expectEqualInt(
-            static_cast<int>(whiteLegalMoves.size()),
-            20,
-            "White has 20 legal moves in starting position"
-        );
-
-        expectEqualInt(
-            static_cast<int>(blackLegalMoves.size()),
-            20,
-            "Black has 20 legal moves in starting position"
-        );
-
-        expectFalse(
-            AttackDetector::isKingInCheck(board, PieceColor::White),
-            "White is not in check in starting position"
-        );
-
-        expectFalse(
-            AttackDetector::isKingInCheck(board, PieceColor::Black),
-            "Black is not in check in starting position"
-        );
-    }
-
-    {
-        Board board;
-        board.clear();
-
-        board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White}); // e1
-        board.setPiece({4, 7}, Piece{PieceType::Rook, PieceColor::Black}); // e8
-        board.setPiece({0, 7}, Piece{PieceType::King, PieceColor::Black}); // a8
-
-        expectTrue(
-            AttackDetector::isKingInCheck(board, PieceColor::White),
-            "White king is in check from black rook"
-        );
-    }
-
-    {
-        Board board;
-        board.clear();
-
-        board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White});   // e1
-        board.setPiece({4, 3}, Piece{PieceType::Bishop, PieceColor::White}); // e4 blocker
-        board.setPiece({4, 7}, Piece{PieceType::Rook, PieceColor::Black});   // e8
-        board.setPiece({0, 7}, Piece{PieceType::King, PieceColor::Black});   // a8
-
-        expectFalse(
-            AttackDetector::isKingInCheck(board, PieceColor::White),
-            "White king is not in check when rook is blocked"
-        );
-    }
-
-    {
-        Board board;
-        board.clear();
-
-        board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White});   // e1
-        board.setPiece({5, 2}, Piece{PieceType::Knight, PieceColor::Black}); // f3
-        board.setPiece({0, 7}, Piece{PieceType::King, PieceColor::Black});   // a8
-
-        expectTrue(
-            AttackDetector::isKingInCheck(board, PieceColor::White),
-            "White king is in check from black knight"
-        );
-    }
-
-    {
-        Board board;
-        board.clear();
-
-        board.setPiece({0, 0}, Piece{PieceType::King, PieceColor::White}); // a1
-        board.setPiece({4, 3}, Piece{PieceType::Pawn, PieceColor::White}); // e4
-        board.setPiece({3, 4}, Piece{PieceType::King, PieceColor::Black}); // d5
-
-        expectTrue(
-            AttackDetector::isKingInCheck(board, PieceColor::Black),
-            "Black king is in check from white pawn"
-        );
-    }
-
-    {
-        Board board;
-        board.clear();
-
-        board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White}); // e1
-        board.setPiece({4, 1}, Piece{PieceType::Rook, PieceColor::White}); // e2 pinned rook
-        board.setPiece({4, 7}, Piece{PieceType::Rook, PieceColor::Black}); // e8
-        board.setPiece({0, 7}, Piece{PieceType::King, PieceColor::Black}); // a8
-
-        auto legalMoves = MoveGenerator::generateLegalMoves(
-            board,
-            PieceColor::White
-        );
-
-        expectFalse(
-            containsMove(legalMoves, Square{4, 1}, Square{3, 1}), // e2 to d2
-            "Pinned white rook cannot move away and expose king"
-        );
-
-        expectTrue(
-            containsMove(legalMoves, Square{4, 1}, Square{4, 7}), // e2 to e8
-            "Pinned white rook can capture checking rook"
-        );
-    }
-    {
-        Board board;
-        board.clear();
-
-        board.setPiece({0, 0}, Piece{PieceType::King, PieceColor::White}); // a1
-        board.setPiece({1, 1}, Piece{PieceType::Queen, PieceColor::Black}); // b2
-        board.setPiece({2, 2}, Piece{PieceType::King, PieceColor::Black});  // c3
-
-        GameState state;
-        state.board = board;
-        state.sideToMove = PieceColor::White;
-
-        GameStatus status = state.getStatus();
-
-        expectTrue(
-            status == GameStatus::Checkmate,
-            "White is checkmated"
-        );
-    }
-    {
-    Board board;
-    board.clear();
-
-    board.setPiece({0, 0}, Piece{PieceType::King, PieceColor::White}); // a1
-    board.setPiece({2, 1}, Piece{PieceType::Queen, PieceColor::Black}); // c2
-    board.setPiece({2, 2}, Piece{PieceType::King, PieceColor::Black});  // c3
-
-
-    GameState state;
-    state.board = board;
-    state.sideToMove = PieceColor::White;
-
-    GameStatus status = state.getStatus();
-
-    expectTrue(
-        status == GameStatus::Stalemate,
-        "White is stalemated"
-    );
-}
+void testPawnMove()
 {
-    Board board;
-    board.clear();
+    const GameState state = GameState::startingPosition();
 
-    board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White}); // e1
-    board.setPiece({4, 7}, Piece{PieceType::Rook, PieceColor::Black}); // e8
-    board.setPiece({0, 7}, Piece{PieceType::King, PieceColor::Black}); // a8
-
-    GameState state;
-    state.board = board;
-    state.sideToMove = PieceColor::White;
-
-    GameStatus status = state.getStatus();
-
-    expectTrue(
-        status == GameStatus::Check,
-        "White is in check but not checkmated"
-    );
-}
-{
-    Board board;
-    board.setupStartingPosition();
-
-    GameState state;
-    state.board = board;
-    state.sideToMove = PieceColor::White;
-
-    GameStatus status = state.getStatus();
-
-    expectTrue(
-        status == GameStatus::Ongoing,
-        "Starting position is ongoing"
-    );
-}
-
-{
-    Board board;
-    board.clear();
-
-    board.setPiece({0, 0}, Piece{PieceType::King, PieceColor::White}); // a1
-    board.setPiece({7, 7}, Piece{PieceType::King, PieceColor::Black}); // h8
-
-    board.setPiece({4, 6}, Piece{PieceType::Pawn, PieceColor::White}); // e7
-
-    auto moves = MoveGenerator::generateLegalMoves(
-        board,
-        PieceColor::White
-    );
-
-    expectEqualInt(
-        countPromotionMoves(moves, Square{4, 6}, Square{4, 7}),
-        4,
-        "White pawn has 4 promotion choices on e8"
-    );
-
-    expectTrue(
-        containsPromotionMove(moves, Square{4, 6}, Square{4, 7}, PieceType::Queen),
-        "White pawn can promote to queen"
-    );
-
-    expectTrue(
-        containsPromotionMove(moves, Square{4, 6}, Square{4, 7}, PieceType::Rook),
-        "White pawn can promote to rook"
-    );
-
-    expectTrue(
-        containsPromotionMove(moves, Square{4, 6}, Square{4, 7}, PieceType::Bishop),
-        "White pawn can promote to bishop"
-    );
-
-    expectTrue(
-        containsPromotionMove(moves, Square{4, 6}, Square{4, 7}, PieceType::Knight),
-        "White pawn can promote to knight"
-    );
-}
-{
-    Board board;
-    board.clear();
-
-    board.setPiece({0, 0}, Piece{PieceType::King, PieceColor::White}); // a1
-    board.setPiece({7, 7}, Piece{PieceType::King, PieceColor::Black}); // h8
-
-    board.setPiece({4, 1}, Piece{PieceType::Pawn, PieceColor::Black}); // e2
-
-    auto moves = MoveGenerator::generateLegalMoves(
-        board,
-        PieceColor::Black
-    );
-
-    expectEqualInt(
-        countPromotionMoves(moves, Square{4, 1}, Square{4, 0}),
-        4,
-        "Black pawn has 4 promotion choices on e1"
-    );
-
-    expectTrue(
-        containsPromotionMove(moves, Square{4, 1}, Square{4, 0}, PieceType::Queen),
-        "Black pawn can promote to queen"
-    );
-
-    expectTrue(
-        containsPromotionMove(moves, Square{4, 1}, Square{4, 0}, PieceType::Rook),
-        "Black pawn can promote to rook"
-    );
-
-    expectTrue(
-        containsPromotionMove(moves, Square{4, 1}, Square{4, 0}, PieceType::Bishop),
-        "Black pawn can promote to bishop"
-    );
-
-    expectTrue(
-        containsPromotionMove(moves, Square{4, 1}, Square{4, 0}, PieceType::Knight),
-        "Black pawn can promote to knight"
-    );
-}{
-    Board board;
-    board.clear();
-
-    board.setPiece({0, 0}, Piece{PieceType::King, PieceColor::White}); // a1
-    board.setPiece({7, 7}, Piece{PieceType::King, PieceColor::Black}); // h8
-
-    board.setPiece({4, 6}, Piece{PieceType::Pawn, PieceColor::White}); // e7
-    board.setPiece({3, 7}, Piece{PieceType::Rook, PieceColor::Black}); // d8
-
-    auto moves = MoveGenerator::generateLegalMoves(
-        board,
-        PieceColor::White
-    );
-
-    expectEqualInt(
-        countPromotionMoves(moves, Square{4, 6}, Square{3, 7}),
-        4,
-        "White pawn has 4 capture-promotion choices on d8"
-    );
-
-    expectTrue(
-        containsPromotionMove(moves, Square{4, 6}, Square{3, 7}, PieceType::Queen),
-        "White pawn can capture-promote to queen"
-    );
-}{
-    Board board;
-    board.clear();
-
-    board.setPiece({0, 0}, Piece{PieceType::King, PieceColor::White}); // a1
-    board.setPiece({7, 7}, Piece{PieceType::King, PieceColor::Black}); // h8
-
-    board.setPiece({4, 6}, Piece{PieceType::Pawn, PieceColor::White}); // e7
-
-    Move promotionMove{
-        Square{4, 6},
-        Square{4, 7},
-        MoveType::Promotion,
-        PieceType::Queen
-    };
-
-    bool moveWorked = board.makeMove(promotionMove);
-
-    auto promotedPiece = board.pieceAt({4, 7});
-    auto oldSquare = board.pieceAt({4, 6});
-
-    expectTrue(
-        moveWorked,
-        "Promotion move is accepted by Board::makeMove"
-    );
-
-    expectTrue(
-        promotedPiece.has_value() &&
-        promotedPiece->type == PieceType::Queen &&
-        promotedPiece->color == PieceColor::White,
-        "White pawn promotes to queen on e8"
-    );
-
-    expectTrue(
-        !oldSquare.has_value(),
-        "Original pawn square is empty after promotion"
-    );
-}
-{
-    Game game;
-
-    expectTrue(
-        game.sideToMove() == PieceColor::White,
-        "New game starts with White to move"
-    );
-
-    expectEqualInt(
-        static_cast<int>(game.moveHistory().size()),
-        0,
-        "New game starts with empty move history"
-    );
-
-    expectTrue(
-        game.status() == GameStatus::Ongoing,
-        "New game status is ongoing"
-    );
-
-    expectTrue(
-        game.castlingRights().whiteKingside,
-        "White starts with kingside castling rights"
-    );
-
-    expectTrue(
-        game.castlingRights().whiteQueenside,
-        "White starts with queenside castling rights"
-    );
-
-    expectTrue(
-        game.castlingRights().blackKingside,
-        "Black starts with kingside castling rights"
-    );
-
-    expectTrue(
-        game.castlingRights().blackQueenside,
-        "Black starts with queenside castling rights"
-    );
-
-    expectTrue(
-        !game.enPassantTarget().has_value(),
-        "New game starts with no en passant target"
-    );
-}{
-    Game game;
-
-    Move move{
+    const Move move{
         Square{4, 1}, // e2
         Square{4, 3}, // e4
         MoveType::Normal
     };
 
-    bool moveWorked = game.makeMove(move);
+    expectSan(state, move, "e4", "Pawn move e2-e4 is e4");
+}
 
-    auto pieceOnE4 = game.board().pieceAt({4, 3});
-    auto pieceOnE2 = game.board().pieceAt({4, 1});
+void testKnightMove()
+{
+    const GameState state = GameState::startingPosition();
 
-    expectTrue(
-        moveWorked,
-        "Game accepts legal move e2 to e4"
-    );
-
-    expectTrue(
-        pieceOnE4.has_value() &&
-        pieceOnE4->type == PieceType::Pawn &&
-        pieceOnE4->color == PieceColor::White,
-        "White pawn is on e4 after e2 to e4"
-    );
-
-    expectTrue(
-        !pieceOnE2.has_value(),
-        "e2 is empty after e2 to e4"
-    );
-
-    expectTrue(
-        game.sideToMove() == PieceColor::Black,
-        "Side to move switches to Black after White move"
-    );
-
-    expectEqualInt(
-        static_cast<int>(game.moveHistory().size()),
-        1,
-        "Move history contains one move after e2 to e4"
-    );
-
-    expectTrue(
-        optionalSquareEquals(game.enPassantTarget(), Square{4, 2}),
-        "e2 to e4 sets en passant target to e3"
-    );
-}{
-    Game game;
-
-    Move illegalMove{
-        Square{4, 1}, // e2
-        Square{4, 4}, // e5
+    const Move move{
+        Square{6, 0}, // g1
+        Square{5, 2}, // f3
         MoveType::Normal
     };
 
-    bool moveWorked = game.makeMove(illegalMove);
+    expectSan(state, move, "Nf3", "Knight move g1-f3 is Nf3");
+}
 
-    expectFalse(
-        moveWorked,
-        "Game rejects illegal pawn move e2 to e5"
-    );
+void testPawnCapture()
+{
+    GameState state = emptyState();
 
-    expectTrue(
-        game.sideToMove() == PieceColor::White,
-        "Side to move does not change after illegal move"
-    );
+    state.board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White});
+    state.board.setPiece({4, 7}, Piece{PieceType::King, PieceColor::Black});
+    state.board.setPiece({4, 3}, Piece{PieceType::Pawn, PieceColor::White}); // e4
+    state.board.setPiece({3, 4}, Piece{PieceType::Pawn, PieceColor::Black}); // d5
 
-    expectEqualInt(
-        static_cast<int>(game.moveHistory().size()),
-        0,
-        "Move history does not change after illegal move"
-    );
-}{
-    Game game;
+    const Move move{
+        Square{4, 3}, // e4
+        Square{3, 4}, // d5
+        MoveType::Capture
+    };
 
-    bool whiteMoveWorked = game.makeMove(
-        Move{
-            Square{4, 1}, // e2
-            Square{4, 3}, // e4
-            MoveType::Normal
-        }
-    );
+    expectSan(state, move, "exd5", "Pawn capture e4xd5 is exd5");
+}
 
-    bool secondWhiteMoveWorked = game.makeMove(
-        Move{
-            Square{6, 0}, // g1
-            Square{5, 2}, // f3
-            MoveType::Normal
-        }
-    );
+void testPieceCapture()
+{
+    GameState state = emptyState();
 
-    expectTrue(
-        whiteMoveWorked,
-        "First White move e2 to e4 works"
-    );
+    state.board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White});
+    state.board.setPiece({4, 7}, Piece{PieceType::King, PieceColor::Black});
+    state.board.setPiece({5, 2}, Piece{PieceType::Knight, PieceColor::White}); // f3
+    state.board.setPiece({4, 4}, Piece{PieceType::Pawn, PieceColor::Black});   // e5
 
-    expectFalse(
-        secondWhiteMoveWorked,
-        "White cannot move twice in a row"
-    );
+    const Move move{
+        Square{5, 2}, // f3
+        Square{4, 4}, // e5
+        MoveType::Capture
+    };
 
-    expectTrue(
-        game.sideToMove() == PieceColor::Black,
-        "Side remains Black after rejected second White move"
-    );
+    expectSan(state, move, "Nxe5", "Knight capture f3xe5 is Nxe5");
+}
 
-    expectEqualInt(
-        static_cast<int>(game.moveHistory().size()),
-        1,
-        "Rejected wrong-side move is not added to history"
-    );
-}{
-    Game game;
+void testFileDisambiguation()
+{
+    GameState state = emptyState();
 
-    game.makeMove(
-        Move{
-            Square{4, 1}, // e2
-            Square{4, 3}, // e4
-            MoveType::Normal
-        }
-    );
+    state.board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White});
+    state.board.setPiece({4, 7}, Piece{PieceType::King, PieceColor::Black});
+    state.board.setPiece({1, 0}, Piece{PieceType::Knight, PieceColor::White}); // b1
+    state.board.setPiece({5, 0}, Piece{PieceType::Knight, PieceColor::White}); // f1
 
-    expectTrue(
-        optionalSquareEquals(game.enPassantTarget(), Square{4, 2}),
-        "e2 to e4 creates en passant target e3"
-    );
+    const Move move{
+        Square{1, 0}, // b1
+        Square{3, 1}, // d2
+        MoveType::Normal
+    };
 
-    game.makeMove(
-        Move{
-            Square{6, 7}, // g8
-            Square{5, 5}, // f6
-            MoveType::Normal
-        }
-    );
+    expectSan(state, move, "Nbd2", "Two knights require file disambiguation");
+}
 
-    expectTrue(
-        !game.enPassantTarget().has_value(),
-        "En passant target clears after non-double-pawn move"
-    );
-}{
-    Game game;
+void testKingsideCastling()
+{
+    GameState state = emptyState();
 
-    game.makeMove(
-        Move{
-            Square{4, 1}, // e2
-            Square{4, 3}, // e4
-            MoveType::Normal
-        }
-    );
+    state.board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White});
+    state.board.setPiece({7, 0}, Piece{PieceType::Rook, PieceColor::White});
+    state.board.setPiece({4, 7}, Piece{PieceType::King, PieceColor::Black});
+    state.castlingRights.whiteKingside = true;
 
-    game.makeMove(
-        Move{
-            Square{6, 7}, // g8
-            Square{5, 5}, // f6
-            MoveType::Normal
-        }
-    );
-
-    bool kingMoveWorked = game.makeMove(
-        Move{
-            Square{4, 0}, // e1
-            Square{4, 1}, // e2
-            MoveType::Normal
-        }
-    );
-
-    expectTrue(
-        kingMoveWorked,
-        "White king can move from e1 to e2 after e-pawn moves"
-    );
-
-    expectFalse(
-        game.castlingRights().whiteKingside,
-        "White loses kingside castling rights after king moves"
-    );
-
-    expectFalse(
-        game.castlingRights().whiteQueenside,
-        "White loses queenside castling rights after king moves"
-    );
-}{
-    Game game;
-
-    bool knightMoveWorked = game.makeMove(
-        Move{
-            Square{6, 0}, // g1
-            Square{5, 2}, // f3
-            MoveType::Normal
-        }
-    );
-
-    bool blackMoveWorked = game.makeMove(
-        Move{
-            Square{6, 7}, // g8
-            Square{5, 5}, // f6
-            MoveType::Normal
-        }
-    );
-
-    bool rookMoveWorked = game.makeMove(
-        Move{
-            Square{7, 0}, // h1
-            Square{6, 0}, // g1
-            MoveType::Normal
-        }
-    );
-
-    expectTrue(
-        knightMoveWorked,
-        "White knight moves from g1 to f3"
-    );
-
-    expectTrue(
-        blackMoveWorked,
-        "Black knight moves from g8 to f6"
-    );
-
-    expectTrue(
-        rookMoveWorked,
-        "White rook moves from h1 to g1"
-    );
-
-    expectFalse(
-        game.castlingRights().whiteKingside,
-        "White loses kingside castling rights after h1 rook moves"
-    );
-
-    expectTrue(
-        game.castlingRights().whiteQueenside,
-        "White keeps queenside castling rights after h1 rook moves"
-    );
-}{
-    Board board;
-    board.clear();
-
-    board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White}); // e1
-    board.setPiece({7, 0}, Piece{PieceType::Rook, PieceColor::White}); // h1
-    board.setPiece({0, 0}, Piece{PieceType::Rook, PieceColor::White}); // a1
-
-    board.setPiece({4, 7}, Piece{PieceType::King, PieceColor::Black}); // e8
-
-    CastlingRights rights;
-    rights.whiteKingside = true;
-    rights.whiteQueenside = true;
-    rights.blackKingside = false;
-    rights.blackQueenside = false;
-
-    auto moves = MoveGenerator::generateLegalMoves(
-        board,
-        PieceColor::White,
-        rights
-    );
-
-    expectTrue(
-        containsMoveOfType(moves, Square{4, 0}, Square{6, 0}, MoveType::Castle),
-        "White kingside castling move is generated"
-    );
-
-    expectTrue(
-        containsMoveOfType(moves, Square{4, 0}, Square{2, 0}, MoveType::Castle),
-        "White queenside castling move is generated"
-    );
-}{
-    Board board;
-    board.clear();
-
-    board.setPiece({4, 7}, Piece{PieceType::King, PieceColor::Black}); // e8
-    board.setPiece({7, 7}, Piece{PieceType::Rook, PieceColor::Black}); // h8
-    board.setPiece({0, 7}, Piece{PieceType::Rook, PieceColor::Black}); // a8
-
-    board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White}); // e1
-
-    CastlingRights rights;
-    rights.whiteKingside = false;
-    rights.whiteQueenside = false;
-    rights.blackKingside = true;
-    rights.blackQueenside = true;
-
-    auto moves = MoveGenerator::generateLegalMoves(
-        board,
-        PieceColor::Black,
-        rights
-    );
-
-    expectTrue(
-        containsMoveOfType(moves, Square{4, 7}, Square{6, 7}, MoveType::Castle),
-        "Black kingside castling move is generated"
-    );
-
-    expectTrue(
-        containsMoveOfType(moves, Square{4, 7}, Square{2, 7}, MoveType::Castle),
-        "Black queenside castling move is generated"
-    );
-}{
-    Board board;
-    board.clear();
-
-    board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White});   // e1
-    board.setPiece({7, 0}, Piece{PieceType::Rook, PieceColor::White});   // h1
-    board.setPiece({5, 0}, Piece{PieceType::Bishop, PieceColor::White}); // f1 blocker
-
-    board.setPiece({4, 7}, Piece{PieceType::King, PieceColor::Black});   // e8
-
-    CastlingRights rights;
-    rights.whiteKingside = true;
-    rights.whiteQueenside = false;
-    rights.blackKingside = false;
-    rights.blackQueenside = false;
-
-    auto moves = MoveGenerator::generateLegalMoves(
-        board,
-        PieceColor::White,
-        rights
-    );
-
-    expectFalse(
-        containsMoveOfType(moves, Square{4, 0}, Square{6, 0}, MoveType::Castle),
-        "White cannot castle kingside when f1 is occupied"
-    );
-}{
-    Board board;
-    board.clear();
-
-    board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White}); // e1
-    board.setPiece({7, 0}, Piece{PieceType::Rook, PieceColor::White}); // h1
-
-    board.setPiece({0, 7}, Piece{PieceType::King, PieceColor::Black}); // a8
-    board.setPiece({5, 7}, Piece{PieceType::Rook, PieceColor::Black}); // f8 attacks f1
-
-    CastlingRights rights;
-    rights.whiteKingside = true;
-    rights.whiteQueenside = false;
-    rights.blackKingside = false;
-    rights.blackQueenside = false;
-
-    auto moves = MoveGenerator::generateLegalMoves(
-        board,
-        PieceColor::White,
-        rights
-    );
-
-    expectFalse(
-        containsMoveOfType(moves, Square{4, 0}, Square{6, 0}, MoveType::Castle),
-        "White cannot castle through attacked f1 square"
-    );
-}{
-    Board board;
-    board.clear();
-
-    board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White}); // e1
-    board.setPiece({7, 0}, Piece{PieceType::Rook, PieceColor::White}); // h1
-    board.setPiece({4, 7}, Piece{PieceType::King, PieceColor::Black}); // e8
-
-    Move castleMove{
-        Square{4, 0},
-        Square{6, 0},
+    const Move move{
+        Square{4, 0}, // e1
+        Square{6, 0}, // g1
         MoveType::Castle
     };
 
-    bool moveWorked = board.makeMove(castleMove);
+    expectSan(state, move, "O-O", "Kingside castling is O-O");
+}
 
-    auto kingOnG1 = board.pieceAt({6, 0});
-    auto rookOnF1 = board.pieceAt({5, 0});
-    auto oldKingSquare = board.pieceAt({4, 0});
-    auto oldRookSquare = board.pieceAt({7, 0});
+void testPromotion()
+{
+    GameState state = emptyState();
 
-    expectTrue(
-        moveWorked,
-        "Board accepts white kingside castling move"
-    );
+    state.board.setPiece({0, 0}, Piece{PieceType::King, PieceColor::White});
+    state.board.setPiece({7, 7}, Piece{PieceType::King, PieceColor::Black});
+    state.board.setPiece({4, 6}, Piece{PieceType::Pawn, PieceColor::White}); // e7
 
-    expectTrue(
-        kingOnG1.has_value() &&
-        kingOnG1->type == PieceType::King &&
-        kingOnG1->color == PieceColor::White,
-        "White king is on g1 after castling"
-    );
+    const Move move{
+        Square{4, 6}, // e7
+        Square{4, 7}, // e8
+        MoveType::Promotion,
+        PieceType::Queen
+    };
 
-    expectTrue(
-        rookOnF1.has_value() &&
-        rookOnF1->type == PieceType::Rook &&
-        rookOnF1->color == PieceColor::White,
-        "White rook is on f1 after castling"
-    );
+    expectSan(state, move, "e8=Q+", "Promotion with check is e8=Q+");
+}
 
-    expectTrue(
-        !oldKingSquare.has_value(),
-        "e1 is empty after castling"
-    );
-
-    expectTrue(
-        !oldRookSquare.has_value(),
-        "h1 is empty after castling"
-    );
-}{
+void testCheckmate()
+{
     Game game;
 
-    bool move1 = game.makeMove(
-        Move{
-            Square{4, 1}, // e2
-            Square{4, 3}, // e4
-            MoveType::Normal
-        }
-    );
+    game.makeMove(Move{{5, 1}, {5, 2}, MoveType::Normal}); // f2-f3
+    game.makeMove(Move{{4, 6}, {4, 4}, MoveType::Normal}); // e7-e5
+    game.makeMove(Move{{6, 1}, {6, 3}, MoveType::Normal}); // g2-g4
 
-    bool move2 = game.makeMove(
-        Move{
-            Square{4, 6}, // e7
-            Square{4, 4}, // e5
-            MoveType::Normal
-        }
-    );
-
-    bool move3 = game.makeMove(
-        Move{
-            Square{6, 0}, // g1
-            Square{5, 2}, // f3
-            MoveType::Normal
-        }
-    );
-
-    bool move4 = game.makeMove(
-        Move{
-            Square{1, 7}, // b8
-            Square{2, 5}, // c6
-            MoveType::Normal
-        }
-    );
-
-    bool move5 = game.makeMove(
-        Move{
-            Square{5, 0}, // f1
-            Square{4, 1}, // e2
-            MoveType::Normal
-        }
-    );
-
-    bool move6 = game.makeMove(
-        Move{
-            Square{6, 7}, // g8
-            Square{5, 5}, // f6
-            MoveType::Normal
-        }
-    );
-
-    bool castleWorked = game.makeMove(
-        Move{
-            Square{4, 0}, // e1
-            Square{6, 0}, // g1
-            MoveType::Castle
-        }
-    );
-
-    auto kingOnG1 = game.board().pieceAt({6, 0});
-    auto rookOnF1 = game.board().pieceAt({5, 0});
-
-    expectTrue(
-        move1 && move2 && move3 && move4 && move5 && move6,
-        "Setup moves before castling all work"
-    );
-
-    expectTrue(
-        castleWorked,
-        "Game accepts white kingside castling after path is clear"
-    );
-
-    expectTrue(
-        kingOnG1.has_value() &&
-        kingOnG1->type == PieceType::King &&
-        kingOnG1->color == PieceColor::White,
-        "Game places white king on g1 after castling"
-    );
-
-    expectTrue(
-        rookOnF1.has_value() &&
-        rookOnF1->type == PieceType::Rook &&
-        rookOnF1->color == PieceColor::White,
-        "Game places white rook on f1 after castling"
-    );
-
-    expectFalse(
-        game.castlingRights().whiteKingside,
-        "White loses kingside castling rights after castling"
-    );
-
-    expectFalse(
-        game.castlingRights().whiteQueenside,
-        "White loses queenside castling rights after castling"
-    );
-}{
-    Board board;
-    board.clear();
-
-    board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White}); // e1
-    board.setPiece({4, 7}, Piece{PieceType::King, PieceColor::Black}); // e8
-
-    board.setPiece({4, 4}, Piece{PieceType::Pawn, PieceColor::White}); // e5
-    board.setPiece({3, 4}, Piece{PieceType::Pawn, PieceColor::Black}); // d5
-
-    CastlingRights rights{
-        false,
-        false,
-        false,
-        false
+    const Move move{
+        Square{3, 7}, // d8
+        Square{7, 3}, // h4
+        MoveType::Normal
     };
 
-    std::optional<Square> enPassantTarget = Square{3, 5}; // d6
-
-    auto moves = MoveGenerator::generateLegalMoves(
-        board,
-        PieceColor::White,
-        rights,
-        enPassantTarget
-    );
-
-    expectTrue(
-        containsMoveOfType(moves, Square{4, 4}, Square{3, 5}, MoveType::EnPassant),
-        "White en passant move e5 to d6 is generated"
-    );
+    expectSan(game.state(), move, "Qh4#", "Fool's mate ends with Qh4#");
 }
+void testRankDisambiguation()
 {
-    Board board;
-    board.clear();
+    GameState state = emptyState();
 
-    board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White}); // e1
-    board.setPiece({4, 7}, Piece{PieceType::King, PieceColor::Black}); // e8
+    state.board.setPiece(
+        {0, 0},
+        Piece{PieceType::King, PieceColor::White}
+    );
 
-    board.setPiece({4, 3}, Piece{PieceType::Pawn, PieceColor::Black}); // e4
-    board.setPiece({3, 3}, Piece{PieceType::Pawn, PieceColor::White}); // d4
+    state.board.setPiece(
+        {7, 7},
+        Piece{PieceType::King, PieceColor::Black}
+    );
 
-    CastlingRights rights{
-        false,
-        false,
-        false,
-        false
+    // Both rooks can move to e2.
+    state.board.setPiece(
+        {4, 0}, // e1
+        Piece{PieceType::Rook, PieceColor::White}
+    );
+
+    state.board.setPiece(
+        {4, 2}, // e3
+        Piece{PieceType::Rook, PieceColor::White}
+    );
+
+    const Move move{
+        Square{4, 0}, // e1
+        Square{4, 1}, // e2
+        MoveType::Normal
     };
 
-    std::optional<Square> enPassantTarget = Square{3, 2}; // d3
-
-    auto moves = MoveGenerator::generateLegalMoves(
-        board,
-        PieceColor::Black,
-        rights,
-        enPassantTarget
-    );
-
-    expectTrue(
-        containsMoveOfType(moves, Square{4, 3}, Square{3, 2}, MoveType::EnPassant),
-        "Black en passant move e4 to d3 is generated"
+    expectSan(
+        state,
+        move,
+        "R1e2",
+        "Two rooks on the same file require rank disambiguation"
     );
 }
+void testFileAndRankDisambiguation()
 {
-    Board board;
-    board.clear();
+    GameState state = emptyState();
 
-    board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White}); // e1
-    board.setPiece({4, 7}, Piece{PieceType::King, PieceColor::Black}); // e8
+    state.board.setPiece(
+        {0, 0},
+        Piece{PieceType::King, PieceColor::White}
+    );
 
-    board.setPiece({4, 4}, Piece{PieceType::Pawn, PieceColor::White}); // e5
-    board.setPiece({3, 4}, Piece{PieceType::Pawn, PieceColor::Black}); // d5
+    state.board.setPiece(
+        {7, 7},
+        Piece{PieceType::King, PieceColor::Black}
+    );
 
-    Move enPassantMove{
+    /*
+        All three knights can move to d2:
+
+        b1 -> d2  selected move
+        b3 -> d2  same file as b1
+        f1 -> d2  same rank as b1
+    */
+
+    state.board.setPiece(
+        {1, 0}, // b1
+        Piece{PieceType::Knight, PieceColor::White}
+    );
+
+    state.board.setPiece(
+        {1, 2}, // b3
+        Piece{PieceType::Knight, PieceColor::White}
+    );
+
+    state.board.setPiece(
+        {5, 0}, // f1
+        Piece{PieceType::Knight, PieceColor::White}
+    );
+
+    const Move move{
+        Square{1, 0}, // b1
+        Square{3, 1}, // d2
+        MoveType::Normal
+    };
+
+    expectSan(
+        state,
+        move,
+        "Nb1d2",
+        "Three knights require file-and-rank disambiguation"
+    );
+}
+void testQueensideCastling()
+{
+    GameState state = emptyState();
+
+    state.board.setPiece(
+        {4, 0}, // e1
+        Piece{PieceType::King, PieceColor::White}
+    );
+
+    state.board.setPiece(
+        {0, 0}, // a1
+        Piece{PieceType::Rook, PieceColor::White}
+    );
+
+    state.board.setPiece(
+        {4, 7}, // e8
+        Piece{PieceType::King, PieceColor::Black}
+    );
+
+    state.castlingRights.whiteQueenside = true;
+
+    const Move move{
+        Square{4, 0}, // e1
+        Square{2, 0}, // c1
+        MoveType::Castle
+    };
+
+    expectSan(
+        state,
+        move,
+        "O-O-O",
+        "Queenside castling is O-O-O"
+    );
+}
+void testCapturePromotion()
+{
+    GameState state = emptyState();
+
+    state.board.setPiece(
+        {0, 0},
+        Piece{PieceType::King, PieceColor::White}
+    );
+
+    state.board.setPiece(
+        {7, 5},
+        Piece{PieceType::King, PieceColor::Black}
+    );
+
+    state.board.setPiece(
+        {4, 6}, // e7
+        Piece{PieceType::Pawn, PieceColor::White}
+    );
+
+    state.board.setPiece(
+        {3, 7}, // d8
+        Piece{PieceType::Rook, PieceColor::Black}
+    );
+
+    const Move move{
+        Square{4, 6}, // e7
+        Square{3, 7}, // d8
+        MoveType::Promotion,
+        PieceType::Queen
+    };
+
+    expectSan(
+        state,
+        move,
+        "exd8=Q",
+        "Pawn capture promotion is exd8=Q"
+    );
+}
+void testOrdinaryCheck()
+{
+    GameState state = emptyState();
+
+    state.board.setPiece(
+        {0, 0}, // a1
+        Piece{PieceType::King, PieceColor::White}
+    );
+
+    state.board.setPiece(
+        {4, 7}, // e8
+        Piece{PieceType::King, PieceColor::Black}
+    );
+
+    state.board.setPiece(
+        {3, 0}, // d1
+        Piece{PieceType::Queen, PieceColor::White}
+    );
+
+    const Move move{
+        Square{3, 0}, // d1
+        Square{7, 4}, // h5
+        MoveType::Normal
+    };
+
+    expectSan(
+        state,
+        move,
+        "Qh5+",
+        "Queen move giving check is Qh5+"
+    );
+}
+void testEnPassant()
+{
+    GameState state = emptyState();
+
+    state.board.setPiece(
+        {0, 0},
+        Piece{PieceType::King, PieceColor::White}
+    );
+
+    state.board.setPiece(
+        {7, 7},
+        Piece{PieceType::King, PieceColor::Black}
+    );
+
+    state.board.setPiece(
+        {4, 4}, // e5
+        Piece{PieceType::Pawn, PieceColor::White}
+    );
+
+    state.board.setPiece(
+        {3, 4}, // d5
+        Piece{PieceType::Pawn, PieceColor::Black}
+    );
+
+    state.enPassantTarget = Square{3, 5}; // d6
+
+    const Move move{
         Square{4, 4}, // e5
         Square{3, 5}, // d6
         MoveType::EnPassant
     };
 
-    bool moveWorked = board.makeMove(enPassantMove);
-
-    auto whitePawnOnD6 = board.pieceAt({3, 5});
-    auto oldWhitePawnSquare = board.pieceAt({4, 4});
-    auto capturedBlackPawnSquare = board.pieceAt({3, 4});
-
-    expectTrue(
-        moveWorked,
-        "Board accepts white en passant move e5 to d6"
-    );
-
-    expectTrue(
-        whitePawnOnD6.has_value() &&
-        whitePawnOnD6->type == PieceType::Pawn &&
-        whitePawnOnD6->color == PieceColor::White,
-        "White pawn is on d6 after en passant"
-    );
-
-    expectTrue(
-        !oldWhitePawnSquare.has_value(),
-        "e5 is empty after white en passant"
-    );
-
-    expectTrue(
-        !capturedBlackPawnSquare.has_value(),
-        "Black pawn on d5 is removed by en passant"
-    );
-}{
-    Board board;
-    board.clear();
-
-    board.setPiece({4, 0}, Piece{PieceType::King, PieceColor::White}); // e1
-    board.setPiece({4, 7}, Piece{PieceType::King, PieceColor::Black}); // e8
-
-    board.setPiece({4, 3}, Piece{PieceType::Pawn, PieceColor::Black}); // e4
-    board.setPiece({3, 3}, Piece{PieceType::Pawn, PieceColor::White}); // d4
-
-    Move enPassantMove{
-        Square{4, 3}, // e4
-        Square{3, 2}, // d3
-        MoveType::EnPassant
-    };
-
-    bool moveWorked = board.makeMove(enPassantMove);
-
-    auto blackPawnOnD3 = board.pieceAt({3, 2});
-    auto oldBlackPawnSquare = board.pieceAt({4, 3});
-    auto capturedWhitePawnSquare = board.pieceAt({3, 3});
-
-    expectTrue(
-        moveWorked,
-        "Board accepts black en passant move e4 to d3"
-    );
-
-    expectTrue(
-        blackPawnOnD3.has_value() &&
-        blackPawnOnD3->type == PieceType::Pawn &&
-        blackPawnOnD3->color == PieceColor::Black,
-        "Black pawn is on d3 after en passant"
-    );
-
-    expectTrue(
-        !oldBlackPawnSquare.has_value(),
-        "e4 is empty after black en passant"
-    );
-
-    expectTrue(
-        !capturedWhitePawnSquare.has_value(),
-        "White pawn on d4 is removed by en passant"
-    );
-}{
-    Game game;
-
-    bool move1 = game.makeMove(
-        Move{
-            Square{4, 1}, // e2
-            Square{4, 3}, // e4
-            MoveType::Normal
-        }
-    );
-
-    bool move2 = game.makeMove(
-        Move{
-            Square{0, 6}, // a7
-            Square{0, 5}, // a6
-            MoveType::Normal
-        }
-    );
-
-    bool move3 = game.makeMove(
-        Move{
-            Square{4, 3}, // e4
-            Square{4, 4}, // e5
-            MoveType::Normal
-        }
-    );
-
-    bool move4 = game.makeMove(
-        Move{
-            Square{3, 6}, // d7
-            Square{3, 4}, // d5
-            MoveType::Normal
-        }
-    );
-
-    expectTrue(
-        optionalSquareEquals(game.enPassantTarget(), Square{3, 5}),
-        "d7 to d5 creates en passant target d6"
-    );
-
-    bool enPassantWorked = game.makeMove(
-        Move{
-            Square{4, 4}, // e5
-            Square{3, 5}, // d6
-            MoveType::EnPassant
-        }
-    );
-
-    auto whitePawnOnD6 = game.board().pieceAt({3, 5});
-    auto blackPawnOnD5 = game.board().pieceAt({3, 4});
-
-    expectTrue(
-        move1 && move2 && move3 && move4,
-        "Setup moves before white en passant all work"
-    );
-
-    expectTrue(
-        enPassantWorked,
-        "Game accepts white en passant e5 to d6"
-    );
-
-    expectTrue(
-        whitePawnOnD6.has_value() &&
-        whitePawnOnD6->type == PieceType::Pawn &&
-        whitePawnOnD6->color == PieceColor::White,
-        "White pawn is on d6 after Game en passant"
-    );
-
-    expectTrue(
-        !blackPawnOnD5.has_value(),
-        "Black pawn on d5 is removed after Game en passant"
-    );
-
-    expectTrue(
-        game.sideToMove() == PieceColor::Black,
-        "Side switches to Black after white en passant"
+    expectSan(
+        state,
+        move,
+        "exd6",
+        "En passant capture is written as exd6"
     );
 }
+void expectSanException(
+    const GameState& state,
+    const Move& move,
+    const std::string& testName)
+{
+    const std::vector<Move> legalMoves =
+        legalMovesFor(state);
+
+    try {
+        const std::string san =
+            toSan(state, move, legalMoves);
+
+        std::cout << "[FAIL] " << testName << '\n';
+        std::cout << "       Expected an exception\n";
+        std::cout << "       Actual SAN: " << san << '\n';
+    }
+    catch (const std::logic_error&) {
+        std::cout << "[PASS] " << testName << '\n';
+    }
+    catch (const std::exception& error) {
+        std::cout << "[FAIL] " << testName << '\n';
+        std::cout
+            << "       Unexpected exception: "
+            << error.what()
+            << '\n';
+    }
+}
+void testPromotionWithoutPieceType()
+{
+    GameState state = emptyState();
+
+    state.board.setPiece(
+        {0, 0},
+        Piece{PieceType::King, PieceColor::White}
+    );
+
+    state.board.setPiece(
+        {7, 7},
+        Piece{PieceType::King, PieceColor::Black}
+    );
+
+    state.board.setPiece(
+        {4, 6}, // e7
+        Piece{PieceType::Pawn, PieceColor::White}
+    );
+
+    const Move move{
+        Square{4, 6}, // e7
+        Square{4, 7}, // e8
+        MoveType::Promotion,
+        std::nullopt
+    };
+
+    expectSanException(
+        state,
+        move,
+        "Promotion without promotionType throws"
+    );
+}
+void testMoveFromEmptySquare()
+{
+    const GameState state = emptyState();
+
+    const Move move{
+        Square{4, 1}, // e2 is empty
+        Square{4, 3}, // e4
+        MoveType::Normal
+    };
+
+    expectSanException(
+        state,
+        move,
+        "SAN generation from an empty square throws"
+    );
+}
+void expectFromSan(
+    const GameState& state,
+    std::string_view san,
+    const Move& expectedMove,
+    const std::string& testName)
+{
+    const Result<Move> result = fromSan(state, san);
+
+    if (!result.success) {
+        std::cout << "[FAIL] " << testName << '\n';
+        std::cout << "       " << result.message << '\n';
+        return;
+    }
+
+    const Move& actual = result.value;
+
+    const bool matches =
+        actual.from.file == expectedMove.from.file &&
+        actual.from.rank == expectedMove.from.rank &&
+        actual.to.file == expectedMove.to.file &&
+        actual.to.rank == expectedMove.to.rank &&
+        actual.type == expectedMove.type &&
+        actual.promotionType == expectedMove.promotionType;
+
+    if (matches) {
+        std::cout << "[PASS] " << testName << '\n';
+    } else {
+        std::cout << "[FAIL] " << testName << '\n';
+    }
+}
+void expectFromSanFailure(
+    const GameState& state,
+    std::string_view san,
+    const std::string& testName)
+{
+    const Result<Move> result = fromSan(state, san);
+
+    if (!result.success) {
+        std::cout << "[PASS] " << testName << '\n';
+    } else {
+        std::cout << "[FAIL] " << testName << '\n';
+        std::cout << "       Expected failure for SAN: "
+                  << san << '\n';
+    }
+}
+void testFromSanPawnMove()
+{
+    const GameState state = GameState::startingPosition();
+
+    const Move expected{
+        Square{4, 1}, // e2
+        Square{4, 3}, // e4
+        MoveType::Normal
+    };
+
+    expectFromSan(
+        state,
+        "e4",
+        expected,
+        "fromSan parses e4"
+    );
+}
+void testFromSanKnightMove()
+{
+    const GameState state = GameState::startingPosition();
+
+    const Move expected{
+        Square{6, 0}, // g1
+        Square{5, 2}, // f3
+        MoveType::Normal
+    };
+
+    expectFromSan(
+        state,
+        "Nf3",
+        expected,
+        "fromSan parses Nf3"
+    );
+}
+void testFromSanInvalid()
+{
+    const GameState state = GameState::startingPosition();
+
+    expectFromSanFailure(
+        state,
+        "Banana",
+        "fromSan rejects invalid SAN"
+    );
+}
+void testFromSanIllegalMove()
+{
+    const GameState state = GameState::startingPosition();
+
+    expectFromSanFailure(
+        state,
+        "Qh5",
+        "fromSan rejects illegal SAN"
+    );
+}
+void testFromSanIllegal()
+{
+    GameState state = GameState::startingPosition();
+
+    expectFromSanFailure(
+        state,
+        "Qh5",
+        "fromSan rejects illegal SAN"
+    );
+}
+void testSanRoundTrip()
+{
+    const GameState state = GameState::startingPosition();
+
+    const std::vector<Move> legalMoves =
+        MoveGenerator::generateLegalMoves(
+            state.board,
+            state.sideToMove,
+            state.castlingRights,
+            state.enPassantTarget
+        );
+
+    for (const Move& move : legalMoves) {
+        const std::string san =
+            toSan(state, move, legalMoves);
+
+        const Result<Move> parsed =
+            fromSan(state, san);
+
+        if (!parsed.success) {
+            std::cout
+                << "[FAIL] SAN round-trip failed for "
+                << san
+                << '\n';
+            return;
+        }
+    }
+
+    std::cout
+        << "[PASS] Every legal starting move survives SAN round-trip\n";
+}
+bool movesEqual(const Move& first, const Move& second)
+{
+    return first.from.file == second.from.file &&
+           first.from.rank == second.from.rank &&
+           first.to.file == second.to.file &&
+           first.to.rank == second.to.rank &&
+           first.type == second.type &&
+           first.promotionType == second.promotionType;
+}
+
+void testSanRoundTripStartingPosition()
+{
+    const GameState state = GameState::startingPosition();
+
+    const std::vector<Move> legalMoves =
+        MoveGenerator::generateLegalMoves(
+            state.board,
+            state.sideToMove,
+            state.castlingRights,
+            state.enPassantTarget
+        );
+
+    for (const Move& originalMove : legalMoves) {
+        const std::string san =
+            toSan(state, originalMove, legalMoves);
+
+        const Result<Move> parsedMove =
+            fromSan(state, san);
+
+        if (!parsedMove.success) {
+            std::cout
+                << "[FAIL] SAN round-trip failed to parse "
+                << san << '\n';
+            return;
+        }
+
+        if (!movesEqual(originalMove, parsedMove.value)) {
+            std::cout
+                << "[FAIL] SAN round-trip returned a different move for "
+                << san << '\n';
+            return;
+        }
+    }
+
+    std::cout
+        << "[PASS] Every legal starting move survives SAN round-trip\n";
+}void expectPgn(
+    const Game& game,
+    const PgnMetadata& metadata,
+    const std::string& expected,
+    const std::string& testName)
+{
+    try {
+        const std::string actual =
+            toPgn(game, metadata);
+
+        if (actual == expected) {
+            std::cout << "[PASS] " << testName << '\n';
+        }
+        else {
+            std::cout << "[FAIL] " << testName << '\n';
+            std::cout << "Expected:\n" << expected << '\n';
+            std::cout << "Actual:\n" << actual << '\n';
+        }
+    }
+    catch (const std::exception& error) {
+        std::cout << "[FAIL] " << testName << '\n';
+        std::cout << "Exception: " << error.what() << '\n';
+    }
+}
+void testEmptyGamePgn()
 {
     Game game;
 
-    bool move1 = game.makeMove(
-        Move{
-            Square{4, 1}, // e2
-            Square{4, 3}, // e4
-            MoveType::Normal
+    PgnMetadata metadata;
+    metadata.event = "Test";
+    metadata.site = "Skopje";
+    metadata.date = "2026.07.15";
+    metadata.round = "1";
+    metadata.white = "Alice";
+    metadata.black = "Bob";
+    metadata.result = PgnResult::Ongoing;
+
+    const std::string expected =
+        "[Event \"Test\"]\n"
+        "[Site \"Skopje\"]\n"
+        "[Date \"2026.07.15\"]\n"
+        "[Round \"1\"]\n"
+        "[White \"Alice\"]\n"
+        "[Black \"Bob\"]\n"
+        "[Result \"*\"]\n"
+        "\n"
+        "*";
+
+    expectPgn(
+        game,
+        metadata,
+        expected,
+        "Empty game exports valid PGN"
+    );
+}
+void testBasicPgnMoves()
+{
+    Game game;
+
+    game.makeMove(Move{
+        Square{4, 1},
+        Square{4, 3},
+        MoveType::Normal
+    });
+
+    game.makeMove(Move{
+        Square{4, 6},
+        Square{4, 4},
+        MoveType::Normal
+    });
+
+    game.makeMove(Move{
+        Square{6, 0},
+        Square{5, 2},
+        MoveType::Normal
+    });
+
+    PgnMetadata metadata;
+    metadata.event = "Test Game";
+    metadata.site = "Skopje";
+    metadata.date = "2026.07.15";
+    metadata.round = "1";
+    metadata.white = "Alice";
+    metadata.black = "Bob";
+    metadata.result = PgnResult::Ongoing;
+
+    const std::string expected =
+        "[Event \"Test Game\"]\n"
+        "[Site \"Skopje\"]\n"
+        "[Date \"2026.07.15\"]\n"
+        "[Round \"1\"]\n"
+        "[White \"Alice\"]\n"
+        "[Black \"Bob\"]\n"
+        "[Result \"*\"]\n"
+        "\n"
+        "1. e4 e5 2. Nf3 *";
+
+    expectPgn(
+        game,
+        metadata,
+        expected,
+        "PGN exports numbered SAN moves"
+    );
+}
+void testCheckmatePgn()
+{
+    Game game;
+
+    game.makeMove(Move{
+        Square{5, 1},
+        Square{5, 2},
+        MoveType::Normal
+    });
+
+    game.makeMove(Move{
+        Square{4, 6},
+        Square{4, 4},
+        MoveType::Normal
+    });
+
+    game.makeMove(Move{
+        Square{6, 1},
+        Square{6, 3},
+        MoveType::Normal
+    });
+
+    game.makeMove(Move{
+        Square{3, 7},
+        Square{7, 3},
+        MoveType::Normal
+    });
+
+    PgnMetadata metadata;
+    metadata.event = "Fool's Mate";
+    metadata.site = "Skopje";
+    metadata.date = "2026.07.15";
+    metadata.round = "1";
+    metadata.white = "Alice";
+    metadata.black = "Bob";
+    metadata.result = PgnResult::BlackWin;
+
+    const std::string expected =
+        "[Event \"Fool's Mate\"]\n"
+        "[Site \"Skopje\"]\n"
+        "[Date \"2026.07.15\"]\n"
+        "[Round \"1\"]\n"
+        "[White \"Alice\"]\n"
+        "[Black \"Bob\"]\n"
+        "[Result \"0-1\"]\n"
+        "\n"
+        "1. f3 e5 2. g4 Qh4# 0-1";
+
+    expectPgn(
+        game,
+        metadata,
+        expected,
+        "PGN exports checkmate and black-win result"
+    );
+}
+void testEscapedPgnTags()
+{
+    Game game;
+
+    PgnMetadata metadata;
+    metadata.event = "John \"The Hammer\"";
+    metadata.site = R"(C:\Chess)";
+    metadata.date = "2026.07.15";
+    metadata.round = "1";
+    metadata.white = "Alice";
+    metadata.black = "Bob";
+    metadata.result = PgnResult::Ongoing;
+
+    const std::string expected =
+        "[Event \"John \\\"The Hammer\\\"\"]\n"
+        "[Site \"C:\\\\Chess\"]\n"
+        "[Date \"2026.07.15\"]\n"
+        "[Round \"1\"]\n"
+        "[White \"Alice\"]\n"
+        "[Black \"Bob\"]\n"
+        "[Result \"*\"]\n"
+        "\n"
+        "*";
+
+    expectPgn(
+        game,
+        metadata,
+        expected,
+        "PGN escapes tag values"
+    );
+}
+void testBasicPgnImport()
+{
+    const std::string pgn =
+        "[Event \"Test Game\"]\n"
+        "[Site \"Skopje\"]\n"
+        "[Date \"2026.07.15\"]\n"
+        "[Round \"1\"]\n"
+        "[White \"Alice\"]\n"
+        "[Black \"Bob\"]\n"
+        "[Result \"*\"]\n"
+        "\n"
+        "1. e4 e5 2. Nf3 Nc6 *";
+
+    const Result<ImportedPgn> result =
+        fromPgn(pgn);
+
+    if (!result.success) {
+        std::cout << "[FAIL] Basic PGN import\n";
+        std::cout << "       " << result.message << '\n';
+        return;
+    }
+
+    if (result.value.game.moveHistory().size() != 4) {
+        std::cout << "[FAIL] Basic PGN import\n";
+        std::cout << "       Expected 4 moves\n";
+        return;
+    }
+
+    std::cout << "[PASS] Basic PGN import\n";
+}
+void testPgnMetadataImport()
+{
+    const std::string pgn =
+        "[Event \"Test Game\"]\n"
+        "[Site \"Skopje\"]\n"
+        "[Date \"2026.07.15\"]\n"
+        "[Round \"3\"]\n"
+        "[White \"Alice\"]\n"
+        "[Black \"Bob\"]\n"
+        "[Result \"1-0\"]\n"
+        "\n"
+        "1. e4 e5 2. Nf3 Nc6 1-0";
+
+    const Result<ImportedPgn> result =
+        fromPgn(pgn);
+
+    if (!result.success) {
+        std::cout << "[FAIL] PGN metadata import\n";
+        std::cout << "       " << result.message << '\n';
+        return;
+    }
+
+    const PgnMetadata& metadata =
+        result.value.metadata;
+
+    const bool matches =
+        metadata.event == "Test Game" &&
+        metadata.site == "Skopje" &&
+        metadata.date == "2026.07.15" &&
+        metadata.round == "3" &&
+        metadata.white == "Alice" &&
+        metadata.black == "Bob" &&
+        metadata.result == PgnResult::WhiteWin;
+
+    if (matches) {
+        std::cout << "[PASS] PGN metadata import\n";
+    } else {
+        std::cout << "[FAIL] PGN metadata import\n";
+    }
+}
+void testEscapedPgnImport()
+{
+    const std::string pgn =
+        "[Event \"John \\\"The Hammer\\\"\"]\n"
+        "[Site \"C:\\\\Chess\"]\n"
+        "[Date \"2026.07.15\"]\n"
+        "[Round \"1\"]\n"
+        "[White \"Alice\"]\n"
+        "[Black \"Bob\"]\n"
+        "[Result \"*\"]\n"
+        "\n"
+        "*";
+
+    const Result<ImportedPgn> result =
+        fromPgn(pgn);
+
+    if (!result.success) {
+        std::cout << "[FAIL] PGN escaped tag import\n";
+        std::cout << "       " << result.message << '\n';
+        return;
+    }
+
+    const bool matches =
+        result.value.metadata.event ==
+            "John \"The Hammer\"" &&
+        result.value.metadata.site ==
+            R"(C:\Chess)";
+
+    if (matches) {
+        std::cout << "[PASS] PGN escaped tag import\n";
+    } else {
+        std::cout << "[FAIL] PGN escaped tag import\n";
+    }
+}
+void testInvalidSanInPgn()
+{
+    const std::string pgn =
+        "[Event \"Invalid\"]\n"
+        "[Result \"*\"]\n"
+        "\n"
+        "1. e4 Banana *";
+
+    const Result<ImportedPgn> result =
+        fromPgn(pgn);
+
+    if (!result.success) {
+        std::cout << "[PASS] PGN rejects invalid SAN\n";
+    } else {
+        std::cout << "[FAIL] PGN rejects invalid SAN\n";
+    }
+}
+void testInvalidPgnResultTag()
+{
+    const std::string pgn =
+        "[Event \"Invalid Result\"]\n"
+        "[Result \"2-0\"]\n"
+        "\n"
+        "*";
+
+    const Result<ImportedPgn> result =
+        fromPgn(pgn);
+
+    if (!result.success) {
+        std::cout << "[PASS] PGN rejects invalid result tag\n";
+    } else {
+        std::cout << "[FAIL] PGN rejects invalid result tag\n";
+    }
+}
+void testPgnRoundTrip()
+{
+    Game originalGame;
+
+    originalGame.makeMove(Move{
+        Square{4, 1},
+        Square{4, 3},
+        MoveType::Normal
+    });
+
+    originalGame.makeMove(Move{
+        Square{4, 6},
+        Square{4, 4},
+        MoveType::Normal
+    });
+
+    originalGame.makeMove(Move{
+        Square{6, 0},
+        Square{5, 2},
+        MoveType::Normal
+    });
+
+    originalGame.makeMove(Move{
+        Square{1, 7},
+        Square{2, 5},
+        MoveType::Normal
+    });
+
+    PgnMetadata metadata;
+    metadata.event = "Round Trip";
+    metadata.site = "Skopje";
+    metadata.date = "2026.07.15";
+    metadata.round = "1";
+    metadata.white = "Alice";
+    metadata.black = "Bob";
+    metadata.result = PgnResult::Ongoing;
+
+    const std::string exported =
+        toPgn(originalGame, metadata);
+
+    const Result<ImportedPgn> imported =
+        fromPgn(exported);
+
+    if (!imported.success) {
+        std::cout << "[FAIL] PGN round-trip\n";
+        std::cout << "       " << imported.message << '\n';
+        return;
+    }
+
+    const auto& originalHistory =
+        originalGame.moveHistory();
+
+    const auto& importedHistory =
+        imported.value.game.moveHistory();
+
+    if (originalHistory.size() != importedHistory.size()) {
+        std::cout << "[FAIL] PGN round-trip\n";
+        std::cout << "       Move history sizes differ\n";
+        return;
+    }
+
+    for (std::size_t i = 0;
+         i < originalHistory.size();
+         ++i) {
+        if (!movesEqual(
+                originalHistory[i],
+                importedHistory[i])) {
+            std::cout << "[FAIL] PGN round-trip\n";
+            std::cout
+                << "       Move differs at index "
+                << i
+                << '\n';
+            return;
         }
-    );
+    }
 
-    bool move2 = game.makeMove(
-        Move{
-            Square{0, 6}, // a7
-            Square{0, 5}, // a6
-            MoveType::Normal
-        }
-    );
+    std::cout << "[PASS] PGN round-trip\n";
+}
+} // namespace
 
-    bool move3 = game.makeMove(
-        Move{
-            Square{4, 3}, // e4
-            Square{4, 4}, // e5
-            MoveType::Normal
-        }
-    );
+int main()
+{
+    // ----- toSan tests -----
 
-    bool move4 = game.makeMove(
-        Move{
-            Square{3, 6}, // d7
-            Square{3, 4}, // d5
-            MoveType::Normal
-        }
-    );
+    testPawnMove();
+    testKnightMove();
+    testPawnCapture();
+    testPieceCapture();
+    testFileDisambiguation();
+    testRankDisambiguation();
+    testFileAndRankDisambiguation();
+    testKingsideCastling();
+    testQueensideCastling();
+    testPromotion();
+    testCapturePromotion();
+    testOrdinaryCheck();
+    testCheckmate();
+    testEnPassant();
+    testPromotionWithoutPieceType();
+    testMoveFromEmptySquare();
 
-    bool waitingMove = game.makeMove(
-        Move{
-            Square{6, 0}, // g1
-            Square{5, 2}, // f3
-            MoveType::Normal
-        }
-    );
+    // ----- fromSan tests -----
 
-    bool blackReply = game.makeMove(
-        Move{
-            Square{6, 7}, // g8
-            Square{5, 5}, // f6
-            MoveType::Normal
-        }
-    );
+    testFromSanPawnMove();
+    testFromSanKnightMove();
+    testFromSanInvalid();
+    testFromSanIllegal();
+    testSanRoundTripStartingPosition();
 
-    bool lateEnPassant = game.makeMove(
-        Move{
-            Square{4, 4}, // e5
-            Square{3, 5}, // d6
-            MoveType::EnPassant
-        }
-    );
 
-    expectTrue(
-        move1 && move2 && move3 && move4,
-        "Setup moves before missed en passant all work"
-    );
+    testEmptyGamePgn();
+    testBasicPgnMoves();
+    testCheckmatePgn();
+    testEscapedPgnTags();
 
-    expectTrue(
-        waitingMove && blackReply,
-        "Both waiting moves after en passant opportunity work"
-    );
-
-    expectFalse(
-        lateEnPassant,
-        "En passant is not allowed after one move has passed"
-    );
-}testStartingPositionFen();
-testSimpleCustomFen();
-testFenMetadataFields();
-testAllPiecesFen();
-return 0; }
+    testBasicPgnImport();
+    testPgnMetadataImport();
+    testEscapedPgnImport();
+    testInvalidSanInPgn();
+    testInvalidPgnResultTag();
+    testPgnRoundTrip();
+    return 0;
+}
