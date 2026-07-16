@@ -160,17 +160,18 @@ GameState GameState::startingPosition(){
 
 bool GameState::applyMove(const Move& move)
 {
-    updateCastlingRights(move);
-    updateEnPassantTarget(move);
-    updateMoveCounters(move);
+    GameState nextState = *this;
 
-    const bool moveWorked = board.makeMove(move);
+    nextState.updateCastlingRights(move);
+    nextState.updateEnPassantTarget(move);
+    nextState.updateMoveCounters(move);
 
-    if (!moveWorked) {
+    if (!nextState.board.makeMove(move)) {
         return false;
     }
 
-    switchSideToMove();
+    nextState.switchSideToMove();
 
+    *this = std::move(nextState);
     return true;
 }

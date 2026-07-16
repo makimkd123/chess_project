@@ -6,37 +6,16 @@
 #include "models/Move.h"
 #include "models/Pieces.h"
 #include "models/Square.h"
-#include "Game.h"
 #include "CastlingRights.h"
 
 class MoveGenerator {
 public:
-    static std::vector<Move> generatePseudoLegalMoves(
-        const Board& board,
-        PieceColor sideToMove
-    );
 
     static std::vector<Move> generatePseudoLegalMoves(
         const Board& board,
         PieceColor sideToMove,
         const CastlingRights& castlingRights,
         std::optional<Square> enPassantTarget
-    );
-
-    static std::vector<Move> generatePseudoLegalMoves(
-        const Board& board,
-        PieceColor sideToMove,
-        const CastlingRights& castlingRights
-    );
-    static std::vector<Move> generateLegalMoves(
-        const Board& board, 
-        PieceColor sideToMove
-    );
-
-    static std::vector<Move> generateLegalMoves(
-        const Board& board, 
-        PieceColor sideToMove,
-        const CastlingRights& castlingRights
     );
 
     static std::vector<Move> generateLegalMoves(

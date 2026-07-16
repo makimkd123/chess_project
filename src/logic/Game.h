@@ -23,12 +23,10 @@ class Game {
         const GameState& state() const;
         GameState& state();
         bool makeMove (const Move& move);
+        explicit Game(GameState initialState);
+        void reset(GameState initialState);
 
     private:
         GameState state_;
         std::vector<Move> moveHistory_;
-        void switchSideToMove();
-        void updateCastlingRights(const Move& move);
-        void updateEnPassantTarget(const Move& move);
-        void updateMoveCounters(const Move& move);
 };

@@ -2,8 +2,6 @@
 
 #include "logic/Game.h"
 #include "models/Result.h"
-#include "logic/MoveGenerator.h"
-#include "San.h"
 
 
 #include <string>

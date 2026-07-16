@@ -278,24 +278,6 @@ void MoveGenerator::generateKingMoves(const Board& board,Square from,Piece piece
     }
 }
 
-std::vector<Move> MoveGenerator::generateLegalMoves(const Board& board, PieceColor sideToMove){
-
-    CastlingRights noCastlingRights{
-        false,
-        false,
-        false,
-        false
-    };
-    std::optional<Square> enPassantTarget= std::nullopt;
-    return generateLegalMoves(board,sideToMove,noCastlingRights,enPassantTarget);
-}
-
-std::vector<Move> MoveGenerator::generateLegalMoves(const Board& board, PieceColor sideToMove,const CastlingRights& noCastlingRights){
-
-    std::optional<Square> enPassantTarget= std::nullopt;
-    return generateLegalMoves(board,sideToMove,noCastlingRights,enPassantTarget);
-}
-
 std::vector<Move> MoveGenerator::generateLegalMoves(const Board& board, PieceColor sideToMove, const CastlingRights& castlingRights, std::optional<Square> enPassantTarget){
     std::vector<Move> pseudoLegalMoves = generatePseudoLegalMoves(board,sideToMove,castlingRights,enPassantTarget);
     std::vector<Move> legalMoves;
@@ -312,23 +294,6 @@ std::vector<Move> MoveGenerator::generateLegalMoves(const Board& board, PieceCol
         }
     }
     return legalMoves;
-}
-std::vector<Move> MoveGenerator::generatePseudoLegalMoves(const Board& board,PieceColor sideToMove){
-    
-    CastlingRights noCastlingRights{
-        false,
-        false,
-        false,
-        false
-    };
-    std::optional<Square> enPassantTarget= std::nullopt;
-    return generatePseudoLegalMoves(board,sideToMove,noCastlingRights,enPassantTarget);
-}
-
-std::vector<Move> MoveGenerator::generatePseudoLegalMoves(const Board& board,PieceColor sideToMove,const CastlingRights& castlingRights){
-    
-    std::optional<Square> enPassantTarget= std::nullopt;
-    return generatePseudoLegalMoves(board,sideToMove, castlingRights,enPassantTarget);
 }
 
 void MoveGenerator::generateCastlingMoves(const Board& board, Square from, Piece piece, const CastlingRights& castlingRights,std::vector<Move>& moves){

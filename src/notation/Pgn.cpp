@@ -1,4 +1,6 @@
 #include "notation/Pgn.h"
+#include "logic/MoveGenerator.h"
+#include "notation/San.h"
 #include <stdexcept>
 #include <cctype>
 #include <sstream>

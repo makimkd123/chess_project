@@ -10,8 +10,10 @@ std::optional<Piece> Board::pieceAt(Square sq) const{
 }
 
 
-bool Board::isEmpty(Square sq) const{
-    return !pieceAt(sq).has_value();
+bool Board::isEmpty(Square sq) const
+{
+    return isInside(sq) &&
+           !squares_[toIndex(sq)].has_value();
 }
 
 bool Board::isInside(Square sq) const {

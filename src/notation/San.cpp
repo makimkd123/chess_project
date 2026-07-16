@@ -1,7 +1,8 @@
 #include "San.h"
+#include "logic/MoveGenerator.h"
 #include <stdexcept>
 #include <vector>
-
+#include <cctype>
 
 namespace {
 
