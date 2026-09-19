@@ -1,5 +1,23 @@
 #include "Board.h"
 
+namespace {
+
+bool isValidPromotionType(PieceType type){
+    return type == PieceType::Queen ||
+           type == PieceType::Rook ||
+           type == PieceType::Bishop ||
+           type == PieceType::Knight;
+}
+
+bool isPromotionRank(Square square,PieceColor color){
+    if (color == PieceColor::White) {
+        return square.rank == 7;
+    }
+
+    return square.rank == 0;
+}
+
+} // namespace
 
 std::optional<Piece> Board::pieceAt(Square sq) const{
     if(!isInside(sq)){
@@ -76,25 +94,42 @@ bool Board::makeMove(const Move& move) {
         return false;
     }
 
-    auto movingPiece = pieceAt(move.from);
+    const auto movingPiece = pieceAt(move.from);
 
     if (!movingPiece.has_value()) {
         return false;
     }
 
-    if(move.type == MoveType::Promotion){
-        if(!move.promotionType.has_value()){
+    const auto targetPiece=pieceAt(move.to);
+
+    if (targetPiece.has_value() && targetPiece->type == PieceType::King) {
+        return false;
+    }
+
+    if (move.type == MoveType::Promotion){
+        if (movingPiece->type != PieceType::Pawn) {
             return false;
         }
-        setPiece(move.to,Piece{move.promotionType.value(),movingPiece->color });
-        setPiece(move.from,std::nullopt);
+
+        if (!move.promotionType.has_value()){
+            return false;
+        }
+
+        if (!isValidPromotionType(*move.promotionType)){
+            return false;
+        }
+
+        if (!isPromotionRank(move.to, movingPiece->color)){
+            return false;
+        }
+
+        setPiece(move.to,Piece{*move.promotionType,movingPiece->color});
+
+        setPiece(move.from, std::nullopt);
         return true;
     }
 
     if(move.type == MoveType::Castle){
-        if (!movingPiece.has_value()) {
-            return false;
-        }
 
         if (movingPiece->type != PieceType::King) {
             return false;

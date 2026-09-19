@@ -33,8 +33,12 @@ bool hasRook(const Board& board,Square square,PieceColor color){
            piece->color == color;
 }
 
-
+bool isCapturableEnemy(const std::optional<Piece>& targetPiece,PieceColor movingColor){
+    return targetPiece.has_value() &&
+           targetPiece->color != movingColor &&
+           targetPiece->type != PieceType::King;
 }
+}//namespace
 std::vector<Move> MoveGenerator::generatePseudoLegalMoves(const Board& board,PieceColor sideToMove, const CastlingRights& castlingRights, std::optional<Square> enPassantTarget){
     std::vector<Move> moves;
 
@@ -125,7 +129,7 @@ void MoveGenerator::generatePawnMoves(
 
         auto targetPiece = board.pieceAt(target);
 
-        if (targetPiece.has_value() && targetPiece->color != piece.color) {
+        if (isCapturableEnemy(targetPiece, piece.color)) {
             if (isPromotionRank(target, piece.color)) {
                 addPromotionMoves(from, target, moves);
             } else {
@@ -179,7 +183,7 @@ void MoveGenerator::generateKnightMoves(const Board& board, Square from, Piece p
             continue;
         }
 
-        if(targetPiece->color !=piece.color){
+        if(isCapturableEnemy(targetPiece, piece.color)){
             moves.push_back(Move{from, target, MoveType::Capture});
         }
     }
@@ -202,7 +206,7 @@ void MoveGenerator::generateSlidingMoves(const Board& board,Square from,Piece pi
             continue;
         }
 
-        if(targetPiece->color !=piece.color){
+        if(isCapturableEnemy(targetPiece, piece.color)){
             moves.push_back(Move{from, target, MoveType::Capture});
         }
         break;
@@ -272,7 +276,7 @@ void MoveGenerator::generateKingMoves(const Board& board,Square from,Piece piece
             continue;
         }
 
-        if(targetPiece->color !=piece.color){
+        if(isCapturableEnemy(targetPiece, piece.color)){
             moves.push_back(Move{from, target, MoveType::Capture});
         }
     }
