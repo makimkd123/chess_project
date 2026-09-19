@@ -23,8 +23,6 @@ class Game {
         const GameState& state() const;
         GameState& state();
         bool makeMove (const Move& move);
-        explicit Game(GameState initialState);
-        void reset(GameState initialState);
 
     private:
         GameState state_;

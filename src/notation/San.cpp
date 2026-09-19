@@ -26,28 +26,6 @@ char pieceToSanChar(PieceType type)
     return '?';
 }
 
-std::optional<PieceType> sanCharToPieceType(char c)
-{
-    const char upper = static_cast<char>(
-        std::toupper(static_cast<unsigned char>(c))
-    );
-
-    switch (upper) {
-        case 'K':
-            return PieceType::King;
-        case 'Q':
-            return PieceType::Queen;
-        case 'R':
-            return PieceType::Rook;
-        case 'B':
-            return PieceType::Bishop;
-        case 'N':
-            return PieceType::Knight;
-        default:
-            return std::nullopt;
-    }
-}
-
 std::string squareToSan(Square square)
 {
     const char file = static_cast<char>('a' + square.file);
