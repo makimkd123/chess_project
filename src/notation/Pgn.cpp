@@ -285,6 +285,9 @@ Result<ImportedPgn> fromPgn(std::string_view pgn)
     std::string moveText;
 
     while (std::getline(input, line)) {
+        if(!line.empty() && line.back()== '\r'){
+            line.pop_back();
+        }
         if (line.empty()) {
             continue;
         }
