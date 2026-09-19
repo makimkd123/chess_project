@@ -4,6 +4,8 @@
 #include <QGridLayout>
 #include <QPushButton>
 #include <QSizePolicy>
+#include <QResizeEvent>
+#include <algorithm>
 
 ChessBoardWidget::ChessBoardWidget(QWidget* parent)
     : QWidget(parent)
@@ -56,22 +58,7 @@ void ChessBoardWidget::setPosition(const Board& board,PieceColor sideToMove, std
 
     selectedSquare_.reset();
 
-    for(int rank=0;rank<BoardSize;++rank){
-        for(int file=0;file<BoardSize;++file){
-            const Square square{file,rank};
-            const int index=toIndex(file,rank);
-
-            QPushButton* button = squares_[index];
-
-            const std::optional<Piece> piece = board.pieceAt(square);
-            
-            if(piece.has_value()){
-                button->setText(symbolFor(*piece));
-            }else {
-                button->setText({});
-            }
-        }
-    }
+    refreshPieces();
     refreshSquareStyles();
 }
 
@@ -187,40 +174,32 @@ void ChessBoardWidget::refreshSquareStyles()
     for (int rank = 0; rank < BoardSize; ++rank) {
         for (int file = 0; file < BoardSize; ++file) {
             const Square square{file, rank};
-            QPushButton* button = squares_[toIndex(file, rank)];
+
+            QPushButton* button =
+                squares_[toIndex(file, rank)];
+
+            QColor color;
 
             if (selectedSquare_.has_value() &&
                 *selectedSquare_ == square) {
-                button->setStyleSheet(
-                    "background-color: #f6f669;"
-                    "border: none;"
-                );
-
-                continue;
-            }
-
-            if(isLegalDestination(square)){
-                button->setStyleSheet(
-                    "background-color: #a9d18e;"
-                    "border: none;"
-                );
-                continue;
-            }
-
-            const bool isLightSquare =
-                (file + rank) % 2 != 0;
-
-            if (isLightSquare) {
-                button->setStyleSheet(
-                    "background-color: #f0d9b5;"
-                    "border: none;"
-                );
+                color = theme_.selectedSquare;
+            } else if (isLegalDestination(square)) {
+                color = theme_.legalMoveSquare;
             } else {
-                button->setStyleSheet(
-                    "background-color: #b58863;"
-                    "border: none;"
-                );
+                const bool isLightSquare =
+                    (file + rank) % 2 != 0;
+
+                color = isLightSquare
+                    ? theme_.lightSquare
+                    : theme_.darkSquare;
             }
+
+            button->setStyleSheet(
+                QStringLiteral(
+                    "background-color: %1;"
+                    "border: none;"
+                ).arg(color.name(QColor::HexRgb))
+            );
         }
     }
 }
@@ -292,4 +271,62 @@ void ChessBoardWidget::setInputEnabled(bool enabled){
         selectedSquare_.reset();
         refreshSquareStyles();
     }
+}
+
+void ChessBoardWidget::setTheme(const ChessTheme& theme){
+    theme_ = theme;
+
+    refreshPieces();
+    refreshSquareStyles();
+    updateIconSizes();
+}
+
+void ChessBoardWidget::refreshPieces(){
+    if(!displayedBoard_.has_value()){
+        return;
+    }
+
+    for(int rank=0;rank<BoardSize;++rank){
+        for(int file=0;file<BoardSize;++file){
+            const Square square{file,rank};
+
+            QPushButton* button = squares_[toIndex(file,rank)];
+
+            const std::optional<Piece> piece = displayedBoard_->pieceAt(square);
+
+            button->setIcon(QIcon{});
+            button->setText({});
+
+            if(!piece.has_value()){
+                continue;
+            }
+
+            const QIcon& icon = theme_.iconFor(*piece);
+
+            if(!icon.isNull()){
+                button->setIcon(icon);
+            }else{
+                button->setText(symbolFor(*piece));
+            }
+        }
+    }
+    updateIconSizes();
+}
+
+void ChessBoardWidget::updateIconSizes(){
+    for(QPushButton* button : squares_){
+        if(button==nullptr){
+            continue;
+        }
+
+        const int side = static_cast<int>(std::min(button->width(),button->height())*0.82);
+
+        button->setIconSize(QSize(side,side));
+    }
+}
+
+void ChessBoardWidget::resizeEvent(QResizeEvent* event)
+{
+    QWidget::resizeEvent(event);
+    updateIconSizes();
 }

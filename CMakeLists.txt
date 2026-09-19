@@ -8,10 +8,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
-
-qt_standard_project_setup()
-
 # --------------------------------------------------
 # Chess core library
 # --------------------------------------------------
@@ -35,8 +31,32 @@ target_include_directories(chess_core
 )
 
 # --------------------------------------------------
+# Chess core tests
+# --------------------------------------------------
+
+enable_testing()
+
+add_executable(chess_tests
+    tests/TestMain.cpp
+)
+
+target_link_libraries(chess_tests
+    PRIVATE
+        chess_core
+)
+
+add_test(
+    NAME chess_core_tests
+    COMMAND chess_tests
+)
+
+# --------------------------------------------------
 # Qt desktop application
 # --------------------------------------------------
+
+find_package(Qt6 REQUIRED COMPONENTS Widgets)
+
+qt_standard_project_setup()
 
 qt_add_executable(chess_desktop
     src/app/main.cpp
@@ -46,10 +66,23 @@ qt_add_executable(chess_desktop
 
     src/app/ChessBoardWidget.h
     src/app/ChessBoardWidget.cpp
+
+    src/app/theme/ChessTheme.h
+    src/app/theme/ChessTheme.cpp
+    src/app/theme/ThemeLoader.h
+    src/app/theme/ThemeLoader.cpp
 )
 
 target_link_libraries(chess_desktop
     PRIVATE
         chess_core
         Qt6::Widgets
+)
+add_custom_command(
+    TARGET chess_desktop
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets/themes
+        $<TARGET_FILE_DIR:chess_desktop>/themes
+    COMMENT "Copying chess themes"
 )

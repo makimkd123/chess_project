@@ -1,0 +1,8 @@
+{
+    "name": "Cats",
+    "lightSquare": "#d8c3a5",
+    "darkSquare": "#8e6e53",
+    "selectedSquare": "#f4e285",
+    "legalMoveSquare": "#9fc490",
+    "piecesDirectory": "pieces"
+}

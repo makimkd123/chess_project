@@ -2,7 +2,7 @@
 
 #include "models/Board.h"
 #include "models/Square.h"
-
+#include "theme/ChessTheme.h"
 #include <QWidget>
 #include <QString>
 #include <array>
@@ -14,6 +14,7 @@
 
 
 class QPushButton;
+class QResizeEvent;
 
 class ChessBoardWidget : public QWidget{
     Q_OBJECT
@@ -22,7 +23,7 @@ class ChessBoardWidget : public QWidget{
         explicit ChessBoardWidget(QWidget* parent = nullptr);
         void setPosition(const Board& board,PieceColor sideToMove, std::span<const Move> legalMoves);
         void setInputEnabled(bool enabled);
-    
+        void setTheme(const ChessTheme& theme);
     signals:
         void moveRequested(Move move);
     private:
@@ -49,5 +50,13 @@ class ChessBoardWidget : public QWidget{
         
         static int toIndex(int file, int rank);
         static QString symbolFor(const Piece& piece);
+        
+        ChessTheme theme_ = ChessTheme::builtIn();
 
+        void refreshPieces();
+        void updateIconSizes();
+
+
+    protected:
+        void resizeEvent(QResizeEvent* event) override;
 };
