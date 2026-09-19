@@ -2,6 +2,7 @@
 build/
 out/
 cmake-build-*/
+server/learning/
 
 # CMake generated files
 CMakeFiles/
