@@ -60,6 +60,7 @@ func (s *apiServer) routes() http.Handler {
 	mux.HandleFunc("POST /games", s.createGame)
 	mux.HandleFunc("GET /games/{id}", s.getGame)
 	mux.HandleFunc("POST /games/{id}/join", s.joinGame)
+	mux.HandleFunc("POST /games/{id}/moves", s.submitMove)
 	return mux
 }
 

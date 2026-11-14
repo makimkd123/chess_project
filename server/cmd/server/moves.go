@@ -1,6 +1,7 @@
 package main
 
 import (
+	"chess-server/internal/chess"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -27,9 +28,10 @@ func (s *apiServer) submitMove(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	s.mu.RLock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	session, exists := s.games[r.PathValue("id")]
-	s.mu.RUnlock()
+
 	if !exists {
 		writeJSON(w, http.StatusNotFound, map[string]string{
 			"error": "404 Not Found",
@@ -53,7 +55,7 @@ func (s *apiServer) submitMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if session.state.Status != "active" {
+	if session.state.Status != StatusActive {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "game is not active"})
 		return
 	}
@@ -84,5 +86,39 @@ func (s *apiServer) submitMove(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "not your turn"})
 		return
 	}
-	_ = playerColor
+	nextFEN, err := chess.ApplyUCI(session.state.FEN, newMove.Move)
+
+	if err != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+			"error": "illegal move",
+		})
+		return
+	}
+
+	outcome, err := chess.Outcome(nextFEN)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "failed to evaluate game outcome",
+		})
+		return
+	}
+
+	switch outcome {
+	case "checkmate", "stalemate", "insufficient_material", "draw_75_moves":
+		session.state.Status = StatusFinished
+	case "ongoing", "check":
+		session.state.Status = StatusActive
+	default:
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "unknown chess outcome"})
+		return
+	}
+
+	session.state.FEN = nextFEN
+	s.games[session.state.ID] = session
+	writeJSON(w, http.StatusOK, MoveResponse{
+		GameID: session.state.ID,
+		FEN:    session.state.FEN,
+		Status: string(session.state.Status),
+	})
+
 }

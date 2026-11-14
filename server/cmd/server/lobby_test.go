@@ -17,16 +17,22 @@ func TestJoiningGameAndPrivateTokens(t *testing.T) {
 		t.Fatalf("create returned %d", create.Code)
 	}
 	var creator playerResponse
-	if err := json.Unmarshal(create.Body.Bytes(), &creator); err != nil { t.Fatal(err) }
+	if err := json.Unmarshal(create.Body.Bytes(), &creator); err != nil {
+		t.Fatal(err)
+	}
 	if creator.Color != "white" || creator.PlayerToken == "" || !creator.WhiteJoined || creator.BlackJoined {
 		t.Fatalf("invalid creator: %+v", creator)
 	}
 	path := "/games/" + creator.ID
 	join := httptest.NewRecorder()
 	handler.ServeHTTP(join, httptest.NewRequest(http.MethodPost, path+"/join", nil))
-	if join.Code != http.StatusOK { t.Fatalf("join returned %d: %s", join.Code, join.Body.String()) }
+	if join.Code != http.StatusOK {
+		t.Fatalf("join returned %d: %s", join.Code, join.Body.String())
+	}
 	var guest playerResponse
-	if err := json.Unmarshal(join.Body.Bytes(), &guest); err != nil { t.Fatal(err) }
+	if err := json.Unmarshal(join.Body.Bytes(), &guest); err != nil {
+		t.Fatal(err)
+	}
 	if guest.ID != creator.ID || guest.Color != "black" || guest.PlayerToken == "" || guest.PlayerToken == creator.PlayerToken || guest.Status != "active" || !guest.BlackJoined {
 		t.Fatalf("invalid guest: %+v", guest)
 	}
@@ -55,7 +61,9 @@ func TestConcurrentJoiningAllowsOnlyOnePlayer(t *testing.T) {
 	create := httptest.NewRecorder()
 	handler.ServeHTTP(create, httptest.NewRequest(http.MethodPost, "/games", nil))
 	var g game
-	if err := json.Unmarshal(create.Body.Bytes(), &g); err != nil { t.Fatal(err) }
+	if err := json.Unmarshal(create.Body.Bytes(), &g); err != nil {
+		t.Fatal(err)
+	}
 
 	const attempts = 50
 	results := make(chan int, attempts)
@@ -74,9 +82,12 @@ func TestConcurrentJoiningAllowsOnlyOnePlayer(t *testing.T) {
 	wins, conflicts := 0, 0
 	for code := range results {
 		switch code {
-		case http.StatusOK: wins++
-		case http.StatusConflict: conflicts++
-		default: t.Errorf("unexpected join status %d", code)
+		case http.StatusOK:
+			wins++
+		case http.StatusConflict:
+			conflicts++
+		default:
+			t.Errorf("unexpected join status %d", code)
 		}
 	}
 	if wins != 1 || conflicts != attempts-1 {
