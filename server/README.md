@@ -1,6 +1,6 @@
 # Chess Go server
 
-A minimal HTTP backend for the C++/Qt chess project. This first milestone uses Go's standard library only.
+This server currently implements a minimal in-memory two-player game lobby using the Go standard library.
 
 ## Run
 
@@ -10,29 +10,32 @@ From the `server` directory:
 go run ./cmd/server
 ```
 
-The server listens on `http://localhost:8080` by default. Set the `PORT` environment variable to use another port.
+The server listens at `http://localhost:8080` by default. Set `PORT` to change the port.
 
-## API (first milestone)
+## Routes
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/health` | Check that the server is running |
-| `POST` | `/games` | Create a game with the starting FEN |
-| `GET` | `/games/{id}` | Retrieve a created game |
+| GET | `/health` | Check server health |
+| POST | `/games` | Create a game; creator gets White and a private token |
+| GET | `/games/{id}` | Read the public game state; no player tokens |
+| POST | `/games/{id}/join` | Join as Black; returns a private token; 409 when full |
 
-PowerShell example:
+## Try it with PowerShell
 
 ```powershell
-Invoke-RestMethod http://localhost:8080/health
-$game = Invoke-RestMethod -Method Post http://localhost:8080/games
-$game
-Invoke-RestMethod "http://localhost:8080/games/$($game.id)"
+$white = Invoke-RestMethod -Method Post http://localhost:8080/games
+$black = Invoke-RestMethod -Method Post "http://localhost:8080/games/$($white.id)/join"
+$state = Invoke-RestMethod "http://localhost:8080/games/$($white.id)"
+$state
 ```
 
-## Tests
+Keep `$white.player_token` and `$black.player_token` private. They are placeholders for move authorization in a future milestone, not a complete authentication system.
+
+## Test
 
 ```sh
 go test -race ./...
 ```
 
-**Not yet implemented:** joining games, submitting or validating moves, player authentication, WebSockets, and database storage. Games are stored in memory and disappear when the process restarts. The first milestone is intended for local development, not public deployment.
+Games and tokens are stored only in memory and disappear when the server restarts. No move validation, WebSocket sync, authentication, database, rate limiting, or TLS termination exists yet. **For local development only; do not expose this server publicly.**
