@@ -13,12 +13,20 @@ import (
 
 const startingFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
+type GameStatus string
+
+const (
+	StatusWaiting  GameStatus = "waiting_for_opponent"
+	StatusActive   GameStatus = "active"
+	StatusFinished GameStatus = "finished"
+)
+
 type game struct {
-	ID          string `json:"id"`
-	FEN         string `json:"fen"`
-	Status      string `json:"status"`
-	WhiteJoined bool   `json:"white_joined"`
-	BlackJoined bool   `json:"black_joined"`
+	ID          string     `json:"id"`
+	FEN         string     `json:"fen"`
+	Status      GameStatus `json:"status"`
+	WhiteJoined bool       `json:"white_joined"`
+	BlackJoined bool       `json:"black_joined"`
 }
 
 // Credentials are stored separately from public game state.
@@ -75,7 +83,7 @@ func (s *apiServer) createGame(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	g := game{ID: id, FEN: startingFEN, Status: "waiting_for_opponent", WhiteJoined: true}
+	g := game{ID: id, FEN: startingFEN, Status: StatusWaiting, WhiteJoined: true}
 	s.mu.Lock()
 	s.games[g.ID] = gameSession{state: g, whiteToken: token}
 	s.mu.Unlock()
@@ -116,7 +124,7 @@ func (s *apiServer) joinGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	session.state.BlackJoined = true
-	session.state.Status = "active"
+	session.state.Status = StatusActive
 	session.blackToken = token
 	s.games[session.state.ID] = session
 	s.mu.Unlock()
